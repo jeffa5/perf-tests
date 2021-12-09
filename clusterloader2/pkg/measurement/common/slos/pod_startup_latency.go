@@ -188,6 +188,14 @@ var podStartupTransitions = map[string]measurementutil.Transition{
 	},
 	"client_create_to_schedule": {
 		From: clientCreatePhase,
+		To:   schedulePhase,
+	},
+	"create_to_client_schedule": {
+		From: createPhase,
+		To:   clientSchedulePhase,
+	},
+	"client_create_to_client_schedule": {
+		From: clientCreatePhase,
 		To:   clientSchedulePhase,
 	},
 	"schedule_to_run": {
@@ -195,6 +203,14 @@ var podStartupTransitions = map[string]measurementutil.Transition{
 		To:   runPhase,
 	},
 	"client_schedule_to_run": {
+		From: clientSchedulePhase,
+		To:   runPhase,
+	},
+	"schedule_to_client_run": {
+		From: schedulePhase,
+		To:   clientRunPhase,
+	},
+	"client_schedule_to_client_run": {
 		From: clientSchedulePhase,
 		To:   clientRunPhase,
 	},

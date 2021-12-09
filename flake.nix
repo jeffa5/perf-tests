@@ -19,6 +19,7 @@
           postInstall = ''
             mv $out/bin/cmd $out/bin/clusterloader2
           '';
+          runTests = false;
         };
 
         defaultPackage = self.packages.${system}.clusterloader2;
@@ -35,6 +36,8 @@
               go_1_15
               kind
               k9s
+              kubectl
+              helm
 
               self.packages.${system}.clusterloader2
 
