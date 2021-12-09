@@ -19,7 +19,9 @@ package execservice
 import (
 	"bytes"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
+	"os"
 	"os/exec"
 	"sync"
 	"time"
@@ -36,9 +38,27 @@ import (
 const (
 	execDeploymentNamespace = "cluster-loader"
 	execDeploymentName      = "exec-pod"
-	execDeploymentPath      = "pkg/execservice/manifest/exec_deployment.yaml"
-	execPodReplicas         = 3
-	execPodSelector         = "feature = exec"
+	execDeploymentManifest  = `apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{.Name}}
+  namespace: {{.Namespace}}
+spec:
+  replicas: {{.Replicas}}
+  selector:
+    matchLabels:
+       feature: exec
+  template:
+    metadata:
+       labels:
+         feature: exec
+    spec:
+      containers:
+      - name: agnhost
+        image: k8s.gcr.io/e2e-test-images/agnhost:2.32
+	`
+	execPodReplicas = 3
+	execPodSelector = "feature = exec"
 
 	execPodCheckInterval = 10 * time.Second
 	execPodCheckTimeout  = 2 * time.Minute
@@ -67,8 +87,19 @@ func SetUpExecService(f *framework.Framework) error {
 	if err = client.CreateNamespace(f.GetClientSets().GetClient(), execDeploymentNamespace); err != nil {
 		return fmt.Errorf("namespace %s creation error: %v", execDeploymentNamespace, err)
 	}
+	tmpFile, err := ioutil.TempFile(os.TempDir(), "clusterloader2-exec-deployment-")
+	if err != nil {
+		return fmt.Errorf("failed to create tempfile for exec deployment manifest: %v", err)
+	}
+
+	if _, err = tmpFile.Write([]byte(execDeploymentManifest)); err != nil {
+		return fmt.Errorf("failed to write to tempfile for exec deployment manifest: %v", err)
+	}
+
+	defer os.Remove(tmpFile.Name())
+
 	if err = f.ApplyTemplatedManifests(
-		execDeploymentPath,
+		tmpFile.Name(),
 		mapping,
 		client.Retry(apierrs.IsNotFound)); err != nil {
 		return fmt.Errorf("pod %s creation error: %v", execDeploymentName, err)
