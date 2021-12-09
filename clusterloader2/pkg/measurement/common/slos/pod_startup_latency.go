@@ -42,10 +42,13 @@ const (
 	podStartupLatencyMeasurementName  = "PodStartupLatency"
 	informerSyncTimeout               = time.Minute
 
-	createPhase   = "create"
-	schedulePhase = "schedule"
-	runPhase      = "run"
-	watchPhase    = "watch"
+	createPhase         = "create"
+	clientCreatePhase   = "client_create"
+	schedulePhase       = "schedule"
+	clientSchedulePhase = "client_schedule"
+	runPhase            = "run"
+	clientRunPhase      = "client_run"
+	watchPhase          = "watch"
 )
 
 func init() {
@@ -183,9 +186,17 @@ var podStartupTransitions = map[string]measurementutil.Transition{
 		From: createPhase,
 		To:   schedulePhase,
 	},
+	"client_create_to_schedule": {
+		From: clientCreatePhase,
+		To:   clientSchedulePhase,
+	},
 	"schedule_to_run": {
 		From: schedulePhase,
 		To:   runPhase,
+	},
+	"client_schedule_to_run": {
+		From: clientSchedulePhase,
+		To:   clientRunPhase,
 	},
 	"run_to_watch": {
 		From: runPhase,
@@ -315,8 +326,22 @@ func (p *podStartupLatencyMeasurement) processEvent(event *eventData) {
 			}
 			if startTime != metav1.NewTime(time.Time{}) {
 				p.podStartupEntries.Set(key, runPhase, startTime.Time)
+				p.podStartupEntries.Set(key, clientRunPhase, time.Now())
 			} else {
 				klog.Errorf("%s: pod %v (%v) is reported to be running, but none of its containers is", p, pod.Name, pod.Namespace)
+			}
+		}
+	} else {
+		if _, found := p.podStartupEntries.Get(key, clientCreatePhase); !found {
+			p.podStartupEntries.Set(key, clientCreatePhase, time.Now())
+		}
+
+		// set scheduled_client time if not already set
+		if _, found := p.podStartupEntries.Get(key, clientSchedulePhase); !found {
+			for _, condition := range pod.Status.Conditions {
+				if condition.Type == corev1.PodScheduled {
+					p.podStartupEntries.Set(key, clientSchedulePhase, time.Now())
+				}
 			}
 		}
 	}
