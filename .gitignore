@@ -37,3 +37,5 @@ clusterloader2/clusterloader
 
 # GoLand files
 .idea
+
+/.direnv
