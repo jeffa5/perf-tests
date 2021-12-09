@@ -27,6 +27,7 @@ import (
 
 // LatencyMetric represent 50th, 90th and 99th duration quantiles.
 type LatencyMetric struct {
+	Raw    []time.Duration
 	Perc50 time.Duration `json:"Perc50"`
 	Perc90 time.Duration `json:"Perc90"`
 	Perc99 time.Duration `json:"Perc99"`
@@ -61,6 +62,10 @@ func (metric *LatencyMetric) VerifyThreshold(threshold time.Duration) error {
 
 // ToPerfData converts latency metric to PerfData.
 func (metric *LatencyMetric) ToPerfData(name string) DataItem {
+	var raw []float64
+	for _, latency := range metric.Raw {
+		raw = append(raw, float64(latency)/float64(time.Millisecond))
+	}
 	return DataItem{
 		Data: map[string]float64{
 			"Perc50": float64(metric.Perc50) / float64(time.Millisecond),
@@ -71,6 +76,7 @@ func (metric *LatencyMetric) ToPerfData(name string) DataItem {
 		Labels: map[string]string{
 			"Metric": name,
 		},
+		Raw: raw,
 	}
 }
 
@@ -96,12 +102,16 @@ func NewLatencyMetric(latencies []LatencyData) LatencyMetric {
 	if length == 0 {
 		// Ideally we can return LatencyMetric with some NaN/incorrect values,
 		// but 0 is the best we can get for time.Duration type.
-		return LatencyMetric{Perc50: 0, Perc90: 0, Perc99: 0}
+		return LatencyMetric{Perc50: 0, Perc90: 0, Perc99: 0, Raw: nil}
+	}
+	var raw []time.Duration
+	for _, latency := range latencies {
+		raw = append(raw, latency.GetLatency())
 	}
 	perc50 := latencies[int(math.Ceil(float64(length*50)/100))-1].GetLatency()
 	perc90 := latencies[int(math.Ceil(float64(length*90)/100))-1].GetLatency()
 	perc99 := latencies[int(math.Ceil(float64(length*99)/100))-1].GetLatency()
-	return LatencyMetric{Perc50: perc50, Perc90: perc90, Perc99: perc99}
+	return LatencyMetric{Perc50: perc50, Perc90: perc90, Perc99: perc99, Raw: raw}
 }
 
 // NewLatencyMetricPrometheus tries to parse latency data from results of Prometheus query.
