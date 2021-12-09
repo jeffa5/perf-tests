@@ -56,7 +56,7 @@ spec:
       containers:
       - name: agnhost
         image: k8s.gcr.io/e2e-test-images/agnhost:2.32
-	`
+`
 	execPodReplicas = 3
 	execPodSelector = "feature = exec"
 
