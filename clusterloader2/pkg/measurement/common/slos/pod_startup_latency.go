@@ -42,13 +42,17 @@ const (
 	podStartupLatencyMeasurementName  = "PodStartupLatency"
 	informerSyncTimeout               = time.Minute
 
-	createPhase         = "create"
-	clientCreatePhase   = "client_create"
-	schedulePhase       = "schedule"
-	clientSchedulePhase = "client_schedule"
-	runPhase            = "run"
-	clientRunPhase      = "client_run"
-	watchPhase          = "watch"
+	clientCreatePhase          = "client_create"          // first watch event with a creation timestamp set (also just the first watch event)
+	clientSchedulePhase        = "client_schedule"        // first watch event with a node name set / condition with Scheduled status type
+	clientStartedPhase         = "client_started"         // first watch event with the pod's startTime set
+	clientInitializedPhase     = "client_initialized"     // first watch event with the initialized status ready
+	clientContainersReadyPhase = "client_containersready" // first watch event with the containers ready status
+	clientPodReadyPhase        = "client_ready"           // first watch event with the pod ready status
+
+	createPhase   = "create"
+	schedulePhase = "schedule"
+	runPhase      = "run"
+	watchPhase    = "watch"
 )
 
 func init() {
@@ -182,37 +186,33 @@ func (p *podStartupLatencyMeasurement) stop() {
 }
 
 var podStartupTransitions = map[string]measurementutil.Transition{
-	"create_to_schedule": {
-		From: createPhase,
-		To:   schedulePhase,
-	},
-	"client_create_to_schedule": {
-		From: clientCreatePhase,
-		To:   schedulePhase,
-	},
-	"create_to_client_schedule": {
-		From: createPhase,
-		To:   clientSchedulePhase,
-	},
 	"client_create_to_client_schedule": {
 		From: clientCreatePhase,
 		To:   clientSchedulePhase,
 	},
+	"client_schedule_to_client_started": {
+		From: clientSchedulePhase,
+		To:   clientStartedPhase,
+	},
+	"client_started_to_client_initialized": {
+		From: clientStartedPhase,
+		To:   clientInitializedPhase,
+	},
+	"client_initialized_to_client_containersready": {
+		From: clientInitializedPhase,
+		To:   clientContainersReadyPhase,
+	},
+	"client_containersready_to_client_podready": {
+		From: clientContainersReadyPhase,
+		To:   clientPodReadyPhase,
+	},
+	"create_to_schedule": {
+		From: createPhase,
+		To:   schedulePhase,
+	},
 	"schedule_to_run": {
 		From: schedulePhase,
 		To:   runPhase,
-	},
-	"client_schedule_to_run": {
-		From: clientSchedulePhase,
-		To:   runPhase,
-	},
-	"schedule_to_client_run": {
-		From: schedulePhase,
-		To:   clientRunPhase,
-	},
-	"client_schedule_to_client_run": {
-		From: clientSchedulePhase,
-		To:   clientRunPhase,
 	},
 	"run_to_watch": {
 		From: runPhase,
@@ -328,6 +328,54 @@ func (p *podStartupLatencyMeasurement) processEvent(event *eventData) {
 	key := createMetaNamespaceKey(pod.Namespace, pod.Name)
 	p.podMetadata.SetStateless(key, isPodStateless(pod))
 
+	// first event is the one with the creation time set
+	if _, found := p.podStartupEntries.Get(key, clientCreatePhase); !found {
+		if pod.CreationTimestamp.IsZero() {
+			klog.Errorf("pod's first event is missing creation timestamp somehow")
+		}
+		p.podStartupEntries.Set(key, clientCreatePhase, recvTime)
+	}
+
+	// scheduled time is when there is a condition with it
+	if _, found := p.podStartupEntries.Get(key, clientSchedulePhase); !found {
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodScheduled && condition.Status == corev1.ConditionTrue {
+				p.podStartupEntries.Set(key, clientSchedulePhase, recvTime)
+			}
+		}
+	}
+
+	// start time is when the value is set
+	if _, found := p.podStartupEntries.Get(key, clientStartedPhase); !found {
+		if pod.Status.StartTime != nil && !pod.Status.StartTime.IsZero() {
+			p.podStartupEntries.Set(key, clientStartedPhase, recvTime)
+		}
+	}
+
+	if _, found := p.podStartupEntries.Get(key, clientInitializedPhase); !found {
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodInitialized && condition.Status == corev1.ConditionTrue {
+				p.podStartupEntries.Set(key, clientInitializedPhase, recvTime)
+			}
+		}
+	}
+
+	if _, found := p.podStartupEntries.Get(key, clientContainersReadyPhase); !found {
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.ContainersReady && condition.Status == corev1.ConditionTrue {
+				p.podStartupEntries.Set(key, clientContainersReadyPhase, recvTime)
+			}
+		}
+	}
+
+	if _, found := p.podStartupEntries.Get(key, clientPodReadyPhase); !found {
+		for _, condition := range pod.Status.Conditions {
+			if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+				p.podStartupEntries.Set(key, clientPodReadyPhase, recvTime)
+			}
+		}
+	}
+
 	if pod.Status.Phase == corev1.PodRunning {
 		if _, found := p.podStartupEntries.Get(key, createPhase); !found {
 			p.podStartupEntries.Set(key, watchPhase, recvTime)
@@ -342,22 +390,8 @@ func (p *podStartupLatencyMeasurement) processEvent(event *eventData) {
 			}
 			if startTime != metav1.NewTime(time.Time{}) {
 				p.podStartupEntries.Set(key, runPhase, startTime.Time)
-				p.podStartupEntries.Set(key, clientRunPhase, time.Now())
 			} else {
 				klog.Errorf("%s: pod %v (%v) is reported to be running, but none of its containers is", p, pod.Name, pod.Namespace)
-			}
-		}
-	} else {
-		if _, found := p.podStartupEntries.Get(key, clientCreatePhase); !found {
-			p.podStartupEntries.Set(key, clientCreatePhase, time.Now())
-		}
-
-		// set scheduled_client time if not already set
-		if _, found := p.podStartupEntries.Get(key, clientSchedulePhase); !found {
-			for _, condition := range pod.Status.Conditions {
-				if condition.Type == corev1.PodScheduled {
-					p.podStartupEntries.Set(key, clientSchedulePhase, time.Now())
-				}
 			}
 		}
 	}
