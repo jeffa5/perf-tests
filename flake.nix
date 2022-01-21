@@ -33,13 +33,11 @@
         devShell = pkgs.mkShell {
           packages = with pkgs;
             [
-              go_1_15
+              go_1_16
               kind
               k9s
               kubectl
               helm
-
-              self.packages.${system}.clusterloader2
 
               nixpkgs-fmt
               rnix-lsp
