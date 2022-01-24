@@ -27,10 +27,15 @@ import (
 
 // LatencyMetric represent 50th, 90th and 99th duration quantiles.
 type LatencyMetric struct {
-	Raw    []time.Duration
+	Raw    []StartEnd    `json:"raw"`
 	Perc50 time.Duration `json:"Perc50"`
 	Perc90 time.Duration `json:"Perc90"`
 	Perc99 time.Duration `json:"Perc99"`
+}
+
+type StartEnd struct {
+	Start time.Time `json:"start"`
+	End   time.Time `json:"end"`
 }
 
 // SetQuantile set quantile value.
@@ -62,10 +67,6 @@ func (metric *LatencyMetric) VerifyThreshold(threshold time.Duration) error {
 
 // ToPerfData converts latency metric to PerfData.
 func (metric *LatencyMetric) ToPerfData(name string) DataItem {
-	var raw []float64
-	for _, latency := range metric.Raw {
-		raw = append(raw, float64(latency)/float64(time.Millisecond))
-	}
 	return DataItem{
 		Data: map[string]float64{
 			"Perc50": float64(metric.Perc50) / float64(time.Millisecond),
@@ -76,7 +77,7 @@ func (metric *LatencyMetric) ToPerfData(name string) DataItem {
 		Labels: map[string]string{
 			"Metric": name,
 		},
-		Raw: raw,
+		Raw: metric.Raw,
 	}
 }
 
@@ -87,6 +88,8 @@ func (metric LatencyMetric) String() string {
 // LatencyData is an interface for latance data structure.
 type LatencyData interface {
 	GetLatency() time.Duration
+	GetStart() time.Time
+	GetEnd() time.Time
 }
 
 // LatencySlice is a sortable latency array.
@@ -104,9 +107,12 @@ func NewLatencyMetric(latencies []LatencyData) LatencyMetric {
 		// but 0 is the best we can get for time.Duration type.
 		return LatencyMetric{Perc50: 0, Perc90: 0, Perc99: 0, Raw: nil}
 	}
-	var raw []time.Duration
+	var raw []StartEnd
 	for _, latency := range latencies {
-		raw = append(raw, latency.GetLatency())
+		raw = append(raw, StartEnd{
+			Start: latency.GetStart(),
+			End:   latency.GetEnd(),
+		})
 	}
 	perc50 := latencies[int(math.Ceil(float64(length*50)/100))-1].GetLatency()
 	perc90 := latencies[int(math.Ceil(float64(length*90)/100))-1].GetLatency()

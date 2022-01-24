@@ -33,7 +33,7 @@ type DataItem struct {
 	// Labels is the labels of the data item.
 	Labels map[string]string `json:"labels,omitempty"`
 	// Raw is the raw datapoints for this data item.
-	Raw []float64 `json:"raw"`
+	Raw []StartEnd `json:"raw"`
 }
 
 // PerfData contains all data items generated in current test.

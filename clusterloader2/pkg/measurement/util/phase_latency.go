@@ -121,7 +121,12 @@ func (o *ObjectTransitionTimes) CalculateTransitionsLatency(t map[string]Transit
 			if latencyTime < 0 {
 				latencyTime = 0
 			}
-			lag = append(lag, latencyData{key: key, latency: latencyTime})
+			lag = append(lag, latencyData{
+				key:     key,
+				latency: latencyTime,
+				start:   fromPhaseTime,
+				end:     toPhaseTime,
+			})
 		}
 
 		sort.Sort(LatencySlice(lag))
@@ -149,10 +154,20 @@ func (o *ObjectTransitionTimes) printLatencies(latencies []LatencyData, header s
 type latencyData struct {
 	key     string
 	latency time.Duration
+	start   time.Time
+	end     time.Time
 }
 
 func (l latencyData) GetLatency() time.Duration {
 	return l.latency
+}
+
+func (l latencyData) GetStart() time.Time {
+	return l.start
+}
+
+func (l latencyData) GetEnd() time.Time {
+	return l.end
 }
 
 func (l latencyData) String() string {
