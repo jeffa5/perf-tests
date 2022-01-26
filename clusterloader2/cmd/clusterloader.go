@@ -26,6 +26,7 @@ import (
 	"gopkg.in/yaml.v2"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/util/retry"
 	"k8s.io/klog"
 	"k8s.io/kubernetes/pkg/cluster/ports"
 	"k8s.io/perf-tests/clusterloader2/api"
@@ -151,11 +152,18 @@ func completeConfig(m *framework.MultiClientSet) error {
 		klog.V(0).Infof("ClusterConfig.Nodes set to %v", nodes)
 	}
 	if clusterLoaderConfig.ClusterConfig.MasterName == "" {
-		masterName, err := util.GetMasterName(m.GetClient())
-		if err == nil {
-			clusterLoaderConfig.ClusterConfig.MasterName = masterName
-			klog.V(0).Infof("ClusterConfig.MasterName set to %v", masterName)
-		} else {
+		err := retry.OnError(retry.DefaultRetry, func(err error) bool {
+			return true
+		}, func() error {
+			masterName, err := util.GetMasterName(m.GetClient())
+			if err == nil {
+				clusterLoaderConfig.ClusterConfig.MasterName = masterName
+				klog.V(0).Infof("ClusterConfig.MasterName set to %v", masterName)
+				return nil
+			}
+			return err
+		})
+		if err != nil {
 			klog.Errorf("Getting master name error: %v", err)
 		}
 	}
